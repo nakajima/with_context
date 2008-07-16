@@ -1,8 +1,6 @@
 require "rubygems"
-require "expand_path"
-$:.unshift __FILE__.expand_path
 require "spec_helper"
-require "context"
+require File.join(File.dirname(__FILE__), '..', 'lib', 'context.rb')
 
 describe "An object with a method declared in a context" do
   include InContext::WithContext
@@ -80,4 +78,79 @@ describe "An object with an instance method, and the same method declared in a c
     @object.the_context @collector
     @collector.should == [:singleton, :instance]
   end
+end
+
+describe "An object instantiated within a context" do
+  include InContext::WithContext
+
+  before(:each) do
+    @klass = Class.new do
+      include InContext
+      in_context :callable do
+        def call
+          @called = true
+        end
+      end
+      def called?; @called; end
+    end
+  end
+
+  it "should respond to methods granted by context" do
+    with_context(:callable) do
+      @new_object = @klass.new
+      @new_object.call
+      @new_object.should be_called
+    end
+  end
+
+  it "should not respond to methods after context removed" do
+    with_context(:callable) { @new_object = @klass.new }
+    lambda { @new_object.call }.should raise_error(NoMethodError)
+  end
+end
+
+describe "An object should retain super semantics in context" do
+  include InContext::WithContext
+  
+  before(:each) do
+    @klass = Class.new do
+      include InContext
+      def the_context(collector); collector << :instance; end
+      in_context(:override) do
+        def the_context(collector); collector << :singleton; super end
+      end
+    end
+
+    @object = @klass.new
+    @collector = []
+  end
+  
+  it "should call super within context" do
+    with_context(:override) { @object.the_context @collector }
+    @collector.should == [:singleton, :instance]
+  end
+end
+
+describe "overwriting singleton methods" do
+  include InContext::WithContext
+  
+  before(:each) do
+    @klass = Class.new do
+      include InContext
+      in_context(:override) do
+        def the_context(collector); collector << :contextual_singleton; end
+      end
+    end
+
+    @object = @klass.new
+    
+    def @object.the_context(collector); collector << :singleton; end
+    @collector = []
+  end
+  
+  it "should not destroy singleton methods" # do
+  #   with_context(:override) { @object.the_context @collector }
+  #   @object.the_context @collector
+  #   @collector.should == [:contextual_singleton, :singleton]
+  # end
 end
